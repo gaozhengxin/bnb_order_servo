@@ -53,6 +53,12 @@ var buyCmd = &cobra.Command{
 		buyrunner := newPlaceBuyOrdersRunner(tradingpair, wantprice)
 		go listener(&wg1, tradingpair, ch1, asksgetter, &stop1)
 		go servo(&wg2, ch1, &stop1, buyrunner, &seq)
+		go func() {
+			for {
+				CancelOld(&wg2, &seq)
+				time.Sleep(time.Duration(300) * time.Second)
+			}
+		}()
 		select{}
 	},
 }
@@ -68,6 +74,12 @@ var sellCmd = &cobra.Command{
 		sellrunner := newPlaceSellOrderRunner(tradingpair, sellquantity, startsellprice)
 		go listener(&wg1, tradingpair, ch2, mysellordergetter, &stop2)
 		go servo(&wg2, ch2, &stop2, sellrunner, &seq)
+		go func() {
+			for {
+				CancelOld(&wg2, &seq)
+				time.Sleep(time.Duration(300) * time.Second)
+			}
+		}()
 		select{}
 	},
 }
@@ -89,6 +101,12 @@ var buysellCmd = &cobra.Command{
 		sellrunner := newPlaceSellOrderRunner(tradingpair, sellquantity, startsellprice)
 		go listener(&wg1, tradingpair, ch2, mysellordergetter, &stop2)
 		go servo(&wg2, ch2, &stop2, sellrunner, &seq)
+		go func() {
+			for {
+				CancelOld(&wg2, &seq)
+				time.Sleep(time.Duration(300) * time.Second)
+			}
+		}()
 		select{}
 	},
 }
@@ -142,6 +160,11 @@ type Getter func (params ...interface{}) (interface{}, error)
 
 type Runner func (input interface{}, seq *int64) (done bool, res string, err error)
 
+type priceChange struct {
+	depth *ctypes.MarketDepth
+	mem map[string]string
+}
+
 // 获取订单本价格变化
 func newAskPriceChangeGetter() Getter {
 	return Getter(func (params ...interface{}) (res1 interface{}, err1 error) {
@@ -162,10 +185,9 @@ func newAskPriceChangeGetter() Getter {
 			return nil, fmt.Errorf("no sell orders.")
 		}
 		if m[tradingpair+"lastaskprice"] != res.Asks[0][0] {
-			m[tradingpair+"lastaskprice"] = res.Asks[0][0]
-			return res, nil
+			return priceChange{res, m}, nil
 		} else {
-			return nil, fmt.Errorf("no price change.")
+			return priceChange{res, m}, fmt.Errorf("no price change.")
 		}
 	})
 }
@@ -204,7 +226,9 @@ func newMySellOrderChangeGetter() Getter {
 // 根据订单本数据下买单
 func newPlaceBuyOrdersRunner(tradingpair string, wantprice int64) Runner {
 	return Runner(func (input interface{}, seq *int64) (placed bool, orderid string, err error) {
-		marketOrders := input.(*ctypes.MarketDepth)
+		prc := input.(priceChange)
+		marketOrders := prc.depth
+		m := prc.mem
 		if len(marketOrders.Asks) < 1 {
 			return false, "", fmt.Errorf("no sell orders.")
 		}
@@ -220,11 +244,12 @@ func newPlaceBuyOrdersRunner(tradingpair string, wantprice int64) Runner {
 				//buy orderamount * 0.8
 				amt := int64(float64(orderamount)*0.8)
 				amt = amt - amt % lotsize
+				*seq ++
 				res, err := PlaceOrder(tradingpair, 1, price, amt, seq)
 				if err != nil {
 					return false, "", err
 				}
-				*seq ++
+				m[tradingpair+"lastaskprice"] = marketOrders.Asks[0][0]
 				log.Printf("\x1b[95m 成交量: %v    成交价格: %v \x1b[0m\n", amt, price)
 				return true, res.OrderId, nil
 			} else {
@@ -234,6 +259,7 @@ func newPlaceBuyOrdersRunner(tradingpair string, wantprice int64) Runner {
 					return false, "", err
 				}
 				*seq ++
+				m[tradingpair+"lastaskprice"] = marketOrders.Asks[0][0]
 				log.Printf("\x1b[34m 成交量: %v    成交价格: %v \x1b[0m\n", lotsize, price)
 				return true, res.OrderId, nil
 			}
@@ -424,3 +450,51 @@ func GetAccount() (*ctypes.BalanceAccount, error) {
 	}, nil
 }
 */
+
+func CancelOld(wg *sync.WaitGroup, seq *int64) {
+	lim := uint32(10)
+	query := &ctypes.OpenOrdersQuery{
+		SenderAddress: km.GetAddr().String(),
+		Symbol: tradingpair,
+		Limit: &lim,
+	}
+	res, err := q.GetOpenOrders(query)
+	//fmt.Printf("\x1b[2m %v, %v \x1b[0m\n", res, err)
+	if err != nil {
+		log.Printf("\x1b[40m %v \x1b[0m\n", err)
+		return
+	}
+	if res.Total == 0 {
+		log.Printf("\x1b[40m %v \x1b[0m\n", err)
+		return
+	}
+	t := transaction.NewClient("Binance-Chain-Nile", km, q, c)
+	opt := transaction.Option(func(txmsg *tx.StdSignMsg) *tx.StdSignMsg {
+		*seq++
+		txmsg.Sequence = *seq
+		return txmsg
+	})
+	layout := "2006-1-2T15:04:05"
+	tmp := strings.Split(tradingpair, "_")
+	for _, o := range res.Order {
+		cts := strings.TrimSuffix(o.OrderCreateTime, "Z")
+		ct, err := time.Parse(layout, cts)
+		if err != nil {
+			log.Printf("\x1b[40m %v \x1b[0m\n", err)
+			continue
+		}
+		if ct.Before(time.Now().Add(time.Duration(15)*time.Minute)) {
+
+			wg.Add(1)
+			res, err := t.CancelOrder(tmp[0], tmp[1], o.ID, true, opt)
+			wg.Done()
+			fmt.Printf("\x1b[2m %v, %v \x1b[0m\n", res, err)
+			if err != nil {
+				log.Printf("\x1b[40m %v \x1b[0m\n", err)
+				continue
+			}
+			log.Printf("\x1b[30m order %v is canceled \x1b[0m\n", o.ID)
+		}
+	}
+	return
+}
