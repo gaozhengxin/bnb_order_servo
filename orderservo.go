@@ -95,8 +95,8 @@ var buysellCmd = &cobra.Command{
 
 func init() {
 	ctypes.Network = ctypes.TestNetwork
-	c = basic.NewClient("testnet-dex.binance.org:443")
-	//c = basic.NewClient("testnet-aisapacific-dex.binance.org:443")
+	//c = basic.NewClient("testnet-dex.binance.org:443")
+	c = basic.NewClient("testnet-asiapacific-dex.binance.org:443")
 	//c = basic.NewClient("testnet-atlantic-dex.binance.org:443")
 	q = query.NewClient(c)
 	client = rpc.NewRPCClient("5.189.139.168:36657", ctypes.TestNetwork)
@@ -277,7 +277,7 @@ func listener(wg *sync.WaitGroup, tradingpair string, ch chan<- interface{}, get
 			continue
 		}
 		ch <- res
-		time.Sleep(time.Duration(1000) * time.Millisecond)
+		time.Sleep(time.Duration(5000) * time.Millisecond)
 	}
 	wg.Done()
 	defer close(ch)
