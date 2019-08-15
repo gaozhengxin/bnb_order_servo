@@ -29,6 +29,7 @@ var (
 	wg1 sync.WaitGroup
 	wg2 sync.WaitGroup
 	sellquantity int64 = 10000000000
+	startsellprice int64 = 8000
 )
 
 var rootCmd = &cobra.Command{
@@ -60,7 +61,7 @@ var sellCmd = &cobra.Command{
 		stop2 := false
 		ch2 := make(chan interface{})
 		mysellordergetter := newMySellOrderChangeGetter()
-		sellrunner := newPlaceSellOrderRunner(tradingpair, sellquantity)
+		sellrunner := newPlaceSellOrderRunner(tradingpair, sellquantity, startsellprice)
 		go listener(&wg1, tradingpair, ch2, mysellordergetter, &stop2)
 		go servo(&wg2, ch2, &stop2, sellrunner, &seq)
 		select{}
@@ -81,7 +82,7 @@ var buysellCmd = &cobra.Command{
 		stop2 := false
 		ch2 := make(chan interface{})
 		mysellordergetter := newMySellOrderChangeGetter()
-		sellrunner := newPlaceSellOrderRunner(tradingpair, sellquantity)
+		sellrunner := newPlaceSellOrderRunner(tradingpair, sellquantity, startsellprice)
 		go listener(&wg1, tradingpair, ch2, mysellordergetter, &stop2)
 		go servo(&wg2, ch2, &stop2, sellrunner, &seq)
 		select{}
@@ -99,11 +100,13 @@ func init() {
 
 	sellCmd.PersistentFlags().StringVarP(&tradingpair, "tradingpair", "t", "ZCB-F00_BNB", "trading pair")
 	sellCmd.PersistentFlags().Int64VarP(&sellquantity, "sellquantity", "s", 10000000000, "sell quantity")
+	sellCmd.PersistentFlags().Int64VarP(&startsellprice, "startsellprice", "p", 8000, "start sell price")
 
 	buysellCmd.PersistentFlags().StringVarP(&tradingpair, "tradingpair", "t", "ZCB-F00_BNB", "trading pair")
 	buysellCmd.PersistentFlags().Int64VarP(&wantprice, "wantprice", "w", 9000, "want price")
 	buysellCmd.PersistentFlags().Int64VarP(&lotsize, "lotsize", "l", 10000000000, "单位交易量")
 	buysellCmd.PersistentFlags().Int64VarP(&sellquantity, "sellquantity", "s", 10000000000, "sell quantity")
+	buysellCmd.PersistentFlags().Int64VarP(&startsellprice, "startsellprice", "p", 8000, "start sell price")
 
 	rootCmd.AddCommand(buyCmd)
 	rootCmd.AddCommand(sellCmd)
@@ -157,6 +160,7 @@ func newAskPriceChangeGetter() Getter {
 
 type mySellOrder struct {
 	status string
+	lastExecutedPrice string
 	mem map[string]string
 }
 
@@ -180,7 +184,7 @@ func newMySellOrderChangeGetter() Getter {
 			if err != nil {
 				return mySellOrder{}, err
 			}
-			return mySellOrder{status:res.Status, mem:m}, nil
+			return mySellOrder{status:res.Status, lastExecutedPrice:res.LastExecutedPrice, mem:m}, nil
 		}
 	})
 }
@@ -227,7 +231,8 @@ func newPlaceBuyOrdersRunner(tradingpair string, wantprice int64) Runner {
 	})
 }
 
-func newPlaceSellOrderRunner(tradingpair string, quantity int64) Runner {
+// 逐步增加价格的卖单
+func newPlaceSellOrderRunner(tradingpair string, quantity int64, startsellprice int64) Runner {
 	return Runner(func (input interface{}, seq *int64) (placed bool, orderid string, err error) {
 		s := input.(mySellOrder)
 		if s.status == "no order" || s.status == "FullyFill" {
@@ -235,14 +240,20 @@ func newPlaceSellOrderRunner(tradingpair string, quantity int64) Runner {
 			fmt.Printf("\n卖卖卖\n")
 			// sell
 			pricestr := s.mem[tradingpair+"sellprice"]
-			price, _ := strconv.ParseInt(pricestr, 10, 64)
-			price = price + 1000
+			var price int64
+			if pricestr == "" {
+				price = startsellprice
+			} else {
+				price, _ = strconv.ParseInt(pricestr, 10, 64)
+				price = price + 1000
+			}
 			res, err := PlaceOrder(tradingpair, 2, price, quantity, seq)
 			if err != nil {
 				return false, "", err
 			}
 			*seq ++
 			s.mem[tradingpair+"mysellorder"] = res.OrderId
+			s.mem[tradingpair+"sellprice"] = strconv.FormatInt(price, 10)
 			return true, res.OrderId, nil
 		}
 		return false, "", nil
