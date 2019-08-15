@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
-//	"strings"
+	"strings"
 	"sync"
 	"time"
 	"github.com/binance-chain/go-sdk/client/basic"
@@ -15,10 +15,10 @@ import (
 	"github.com/binance-chain/go-sdk/client/rpc"
 	ctypes "github.com/binance-chain/go-sdk/common/types"
 	"github.com/binance-chain/go-sdk/keys"
-	"github.com/binance-chain/go-sdk/types/msg"
+//	"github.com/binance-chain/go-sdk/types/msg"
 	"github.com/binance-chain/go-sdk/types/tx"
 	"github.com/spf13/cobra"
-	ttypes "github.com/tendermint/tendermint/types"
+//	ttypes "github.com/tendermint/tendermint/types"
 )
 
 var (
@@ -26,13 +26,13 @@ var (
 	c basic.BasicClient
 	q query.QueryClient
 	client rpc.Client
-	lotsize int64 = 10000000000
+	lotsize int64 = 1000000000
 	wantprice int64 = 9000
 	tradingpair string = "ZCB-F00_BNB"
 	seq int64 = 0
 	wg1 sync.WaitGroup
 	wg2 sync.WaitGroup
-	sellquantity int64 = 10000000000
+	sellquantity int64 = 1000000000
 	startsellprice int64 = 8000
 )
 
@@ -106,13 +106,13 @@ func init() {
 	buyCmd.PersistentFlags().Int64VarP(&lotsize, "lotsize", "l", 10000000000, "单位交易量")  // TODO default 改为自动获取
 
 	sellCmd.PersistentFlags().StringVarP(&tradingpair, "tradingpair", "t", "ZCB-F00_BNB", "trading pair")
-	sellCmd.PersistentFlags().Int64VarP(&sellquantity, "sellquantity", "s", 10000000000, "sell quantity")
+	sellCmd.PersistentFlags().Int64VarP(&sellquantity, "sellquantity", "s", 1000000000, "sell quantity")
 	sellCmd.PersistentFlags().Int64VarP(&startsellprice, "startsellprice", "p", 8000, "start sell price")
 
 	buysellCmd.PersistentFlags().StringVarP(&tradingpair, "tradingpair", "t", "ZCB-F00_BNB", "trading pair")
 	buysellCmd.PersistentFlags().Int64VarP(&wantprice, "wantprice", "w", 9000, "want price")
-	buysellCmd.PersistentFlags().Int64VarP(&lotsize, "lotsize", "l", 10000000000, "单位交易量")
-	buysellCmd.PersistentFlags().Int64VarP(&sellquantity, "sellquantity", "s", 10000000000, "sell quantity")
+	buysellCmd.PersistentFlags().Int64VarP(&lotsize, "lotsize", "l", 1000000000, "单位交易量")
+	buysellCmd.PersistentFlags().Int64VarP(&sellquantity, "sellquantity", "s", 1000000000, "sell quantity")
 	buysellCmd.PersistentFlags().Int64VarP(&startsellprice, "startsellprice", "p", 8000, "start sell price")
 
 	rootCmd.PersistentFlags().Int64VarP(&seq, "sequence", "n", 0, "account sequence")
@@ -123,7 +123,8 @@ func init() {
 }
 
 func main() {
-	km, _ = keys.NewMnemonicKeyManager("govern cancel early excite other fox canvas satoshi social shiver version inch correct web soap always water wine grid fashion voyage finish canal subject")
+	//km, _ = keys.NewMnemonicKeyManager("govern cancel early excite other fox canvas satoshi social shiver version inch correct web soap always water wine grid fashion voyage finish canal subject")
+	km, _ = keys.NewMnemonicKeyManager("priority hole rail must pioneer trim ancient possible robust song tired art famous unveil history rookie glare shift fringe brass comic quit when talk")
 	if seq == 0 {
 		acc, err := GetAccount()
 		if err != nil {
@@ -212,7 +213,7 @@ func newPlaceBuyOrdersRunner(tradingpair string, wantprice int64) Runner {
 		orderamount8, _ := ctypes.Fixed8DecodeString(marketOrders.Asks[0][1])
 		orderamount := orderamount8.ToInt64()
 		log.Printf("\n\x1b[104m 卖单价格: %v    目标价格: %v \x1b[0m\n", price, wantprice)
-		if float64(price) < float64(wantprice) {
+		if float64(price) <= float64(wantprice) {
 			fmt.Printf("\n买买买\n")
 			fmt.Printf("order amount: %v\n", orderamount)
 			if orderamount > lotsize {
@@ -256,7 +257,7 @@ func newPlaceSellOrderRunner(tradingpair string, quantity int64, startsellprice 
 				price = startsellprice
 			} else {
 				price, _ = strconv.ParseInt(pricestr, 10, 64)
-				price = price + 1000
+				price = price + 100
 			}
 			res, err := PlaceOrder(tradingpair, 2, price, quantity, seq)
 			if err != nil {
@@ -307,7 +308,7 @@ func servo(wg *sync.WaitGroup, ch <-chan interface{}, stop *bool, runner Runner,
 	}
 }
 
-/*
+
 func PlaceOrder(tradingpair string, side int8, price, quantity int64, seq *int64) (*transaction.CreateOrderResult, error) {
 	// TODO 过期时间
 	// 手动设置sequence
@@ -323,8 +324,8 @@ func PlaceOrder(tradingpair string, side int8, price, quantity int64, seq *int64
 	}
 	return res, nil
 }
-*/
 
+/*
 func PlaceOrder(tradingpair string, side int8, price, quantity int64, seq *int64) (*transaction.CreateOrderResult, error) {
 	acc, err := GetAccount()
 	if err != nil {
@@ -356,8 +357,10 @@ func PlaceOrder(tradingpair string, side int8, price, quantity int64, seq *int64
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("place order res: %+v\n", commits)
 	return &transaction.CreateOrderResult{tx.TxCommitResult{Ok:true, Hash:commits.Hash.String()}, id}, nil
 }
+*/
 
 func GetOrder(id string) (*ctypes.Order, error) {
 	return q.GetOrder(id)
@@ -375,14 +378,14 @@ func GetKlines(tradingpair string) ([]ctypes.Kline, error) {
 	return res, nil
 }
 
-/*
+
 func GetOpenOrders(tradingpair string) (*ctypes.MarketDepth, error) {
 	lim := uint32(5)
 	query := &ctypes.DepthQuery{Symbol:tradingpair, Limit:&lim}
 	return q.GetDepth(query)
 }
-*/
 
+/*
 func GetOpenOrders(tradingpair string) (*ctypes.MarketDepth, error) {
 	ob, err := client.GetDepth(tradingpair)
 	if err != nil {
@@ -402,13 +405,13 @@ func GetOpenOrders(tradingpair string) (*ctypes.MarketDepth, error) {
 	}
 	return md, nil
 }
+*/
 
-/*
 func GetAccount() (*ctypes.BalanceAccount, error) {
 	return q.GetAccount(km.GetAddr().String())
 }
-*/
 
+/*
 func GetAccount() (*ctypes.BalanceAccount, error) {
 	acc, err := client.GetAccount(km.GetAddr())
 	if err != nil {
@@ -420,3 +423,4 @@ func GetAccount() (*ctypes.BalanceAccount, error) {
 		Sequence: acc.GetSequence(),
 	}, nil
 }
+*/
