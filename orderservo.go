@@ -6,22 +6,26 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
+//	"strings"
 	"sync"
 	"time"
 	"github.com/binance-chain/go-sdk/client/basic"
 	"github.com/binance-chain/go-sdk/client/query"
 	"github.com/binance-chain/go-sdk/client/transaction"
+	"github.com/binance-chain/go-sdk/client/rpc"
 	ctypes "github.com/binance-chain/go-sdk/common/types"
 	"github.com/binance-chain/go-sdk/keys"
+	"github.com/binance-chain/go-sdk/types/msg"
 	"github.com/binance-chain/go-sdk/types/tx"
 	"github.com/spf13/cobra"
+	ttypes "github.com/tendermint/tendermint/types"
 )
 
 var (
 	km keys.KeyManager
 	c basic.BasicClient
 	q query.QueryClient
+	client rpc.Client
 	lotsize int64 = 10000000000
 	wantprice int64 = 9000
 	tradingpair string = "ZCB-F00_BNB"
@@ -92,7 +96,10 @@ var buysellCmd = &cobra.Command{
 func init() {
 	ctypes.Network = ctypes.TestNetwork
 	c = basic.NewClient("testnet-dex.binance.org:443")
+	//c = basic.NewClient("testnet-aisapacific-dex.binance.org:443")
+	//c = basic.NewClient("testnet-atlantic-dex.binance.org:443")
 	q = query.NewClient(c)
+	client = rpc.NewRPCClient("5.189.139.168:36657", ctypes.TestNetwork)
 
 	buyCmd.PersistentFlags().StringVarP(&tradingpair, "tradingpair", "t", "ZCB-F00_BNB", "trading pair")
 	buyCmd.PersistentFlags().Int64VarP(&wantprice, "wantprice", "w", 9000, "want price")
@@ -264,7 +271,7 @@ func listener(wg *sync.WaitGroup, tradingpair string, ch chan<- interface{}, get
 	var m map[string]string = make(map[string]string)
 	for !*stop {
 		res, err := getter(tradingpair, m)
-		log.Printf("\x1b[93m res: %v      err: %v \x1b[0m\n", res, err)
+		log.Printf("\x1b[93m res: %+v      err: %v \x1b[0m\n", res, err)
 		if err != nil || res == nil {
 			time.Sleep(time.Duration(5) * time.Second)
 			continue
@@ -296,6 +303,7 @@ func servo(wg *sync.WaitGroup, ch <-chan interface{}, stop *bool, runner Runner,
 	}
 }
 
+/*
 func PlaceOrder(tradingpair string, side int8, price, quantity int64, seq *int64) (*transaction.CreateOrderResult, error) {
 	// TODO 过期时间
 	// 手动设置sequence
@@ -310,6 +318,41 @@ func PlaceOrder(tradingpair string, side int8, price, quantity int64, seq *int64
 		return res, err
 	}
 	return res, nil
+}
+*/
+
+func PlaceOrder(tradingpair string, side int8, price, quantity int64, seq *int64) (*transaction.CreateOrderResult, error) {
+	acc, err := GetAccount()
+	if err != nil {
+		return nil, err
+	}
+	id := msg.GenerateOrderID(*seq+1, km.GetAddr())
+	newOrderMsg := msg.NewCreateOrderMsg(km.GetAddr(), id, 1, "ZCB-F00_BNB", 9000, 50000000000)
+	signMsg := tx.StdSignMsg{
+		ChainID:"Binance-Chain-Nile",
+		AccountNumber:acc.Number,
+		Sequence:*seq,
+		Msgs:[]msg.Msg{newOrderMsg},
+		Source:tx.Source,
+	}
+	priv := km.GetPrivKey()
+	rs, err := priv.Sign(signMsg.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	sig := tx.StdSignature{
+		AccountNumber: signMsg.AccountNumber,
+		Sequence:      signMsg.Sequence,
+		PubKey:        km.GetPrivKey().PubKey(),
+		Signature:     rs,
+	}
+	newTx := tx.NewStdTx(signMsg.Msgs, []tx.StdSignature{sig}, signMsg.Memo, signMsg.Source, signMsg.Data)
+	bz, err := tx.Cdc.MarshalBinaryLengthPrefixed(&newTx)
+	commits, err := client.BroadcastTxSync(ttypes.Tx(bz))
+	if err != nil {
+		return nil, err
+	}
+	return &transaction.CreateOrderResult{tx.TxCommitResult{Ok:true, Hash:commits.Hash.String()}, id}, nil
 }
 
 func GetOrder(id string) (*ctypes.Order, error) {
@@ -328,12 +371,48 @@ func GetKlines(tradingpair string) ([]ctypes.Kline, error) {
 	return res, nil
 }
 
+/*
 func GetOpenOrders(tradingpair string) (*ctypes.MarketDepth, error) {
 	lim := uint32(5)
 	query := &ctypes.DepthQuery{Symbol:tradingpair, Limit:&lim}
 	return q.GetDepth(query)
 }
+*/
 
+func GetOpenOrders(tradingpair string) (*ctypes.MarketDepth, error) {
+	ob, err := client.GetDepth(tradingpair)
+	if err != nil {
+		return nil, err
+	}
+	md := new(ctypes.MarketDepth)
+	for i, o := range ob.Levels {
+		if o.BuyQty != 0 {
+			md.Bids = append(md.Bids, []string{o.BuyPrice.String(), o.BuyQty.String()})
+		}
+		if o.SellQty != 0 {
+			md.Asks = append(md.Asks, []string{o.SellPrice.String(), o.SellQty.String()})
+		}
+		if i > 1 {
+			break
+		}
+	}
+	return md, nil
+}
+
+/*
 func GetAccount() (*ctypes.BalanceAccount, error) {
 	return q.GetAccount(km.GetAddr().String())
+}
+*/
+
+func GetAccount() (*ctypes.BalanceAccount, error) {
+	acc, err := client.GetAccount(km.GetAddr())
+	if err != nil {
+		return nil, err
+	}
+	return &ctypes.BalanceAccount{
+		Number: acc.GetAccountNumber(),
+		Address: acc.GetAddress().String(),
+		Sequence: acc.GetSequence(),
+	}, nil
 }
