@@ -29,7 +29,7 @@ var (
 	lotsize int64 = 10000000000
 	wantprice int64 = 9000
 	tradingpair string = "ZCB-F00_BNB"
-	seq int64
+	seq int64 = 0
 	wg1 sync.WaitGroup
 	wg2 sync.WaitGroup
 	sellquantity int64 = 10000000000
@@ -95,9 +95,9 @@ var buysellCmd = &cobra.Command{
 
 func init() {
 	ctypes.Network = ctypes.TestNetwork
-	//c = basic.NewClient("testnet-dex.binance.org:443")
-	c = basic.NewClient("testnet-asiapacific-dex.binance.org:443")
-	//c = basic.NewClient("testnet-atlantic-dex.binance.org:443")
+	c = basic.NewClient("testnet-dex.binance.org:443")
+	//c = basic.NewClient("testnet-dex-asiapacific.binance.org:443")
+	//c = basic.NewClient("testnet-dex-atlantic.binance.org:443")
 	q = query.NewClient(c)
 	client = rpc.NewRPCClient("5.189.139.168:36657", ctypes.TestNetwork)
 
@@ -115,6 +115,8 @@ func init() {
 	buysellCmd.PersistentFlags().Int64VarP(&sellquantity, "sellquantity", "s", 10000000000, "sell quantity")
 	buysellCmd.PersistentFlags().Int64VarP(&startsellprice, "startsellprice", "p", 8000, "start sell price")
 
+	rootCmd.PersistentFlags().Int64VarP(&seq, "sequence", "n", 0, "account sequence")
+
 	rootCmd.AddCommand(buyCmd)
 	rootCmd.AddCommand(sellCmd)
 	rootCmd.AddCommand(buysellCmd)
@@ -122,11 +124,13 @@ func init() {
 
 func main() {
 	km, _ = keys.NewMnemonicKeyManager("govern cancel early excite other fox canvas satoshi social shiver version inch correct web soap always water wine grid fashion voyage finish canal subject")
-	acc, err := GetAccount()
-	if err != nil {
-		log.Fatal(err)
+	if seq == 0 {
+		acc, err := GetAccount()
+		if err != nil {
+			log.Fatal(err)
+		}
+		seq = acc.Sequence
 	}
-	seq = acc.Sequence
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -157,7 +161,7 @@ func newAskPriceChangeGetter() Getter {
 			return nil, fmt.Errorf("no sell orders.")
 		}
 		if m[tradingpair+"lastaskprice"] != res.Asks[0][0] {
-			m["lastprice"] = res.Asks[0][0]
+			m[tradingpair+"lastaskprice"] = res.Asks[0][0]
 			return res, nil
 		} else {
 			return nil, fmt.Errorf("no price change.")
