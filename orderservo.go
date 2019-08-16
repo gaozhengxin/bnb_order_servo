@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"github.com/binance-chain/go-sdk/client/basic"
 	"github.com/binance-chain/go-sdk/client/query"
@@ -59,6 +61,8 @@ var buyCmd = &cobra.Command{
 				time.Sleep(time.Duration(300) * time.Second)
 			}
 		}()
+		wg1.Wait()
+		wg2.Wait()
 		select{}
 	},
 }
@@ -80,6 +84,8 @@ var sellCmd = &cobra.Command{
 				time.Sleep(time.Duration(300) * time.Second)
 			}
 		}()
+		wg1.Wait()
+		wg2.Wait()
 		select{}
 	},
 }
@@ -107,6 +113,8 @@ var buysellCmd = &cobra.Command{
 				time.Sleep(time.Duration(300) * time.Second)
 			}
 		}()
+		wg1.Wait()
+		wg2.Wait()
 		select{}
 	},
 }
@@ -141,6 +149,16 @@ func init() {
 }
 
 func main() {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGUSR2)
+	go func() {
+		for s := range c {
+			switch s {
+			case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+			os.Exit(0)
+			}
+		}
+	}()
 	//km, _ = keys.NewMnemonicKeyManager("govern cancel early excite other fox canvas satoshi social shiver version inch correct web soap always water wine grid fashion voyage finish canal subject")
 	km, _ = keys.NewMnemonicKeyManager("priority hole rail must pioneer trim ancient possible robust song tired art famous unveil history rookie glare shift fringe brass comic quit when talk")
 	if seq == 0 {
@@ -299,6 +317,7 @@ func newPlaceSellOrderRunner(tradingpair string, quantity int64, startsellprice 
 }
 
 func listener(wg *sync.WaitGroup, tradingpair string, ch chan<- interface{}, getter Getter, stop *bool) {
+	wg.Add(1)
 	var m map[string]string = make(map[string]string)
 	for !*stop {
 		res, err := getter(tradingpair, m)
@@ -315,12 +334,11 @@ func listener(wg *sync.WaitGroup, tradingpair string, ch chan<- interface{}, get
 }
 
 func servo(wg *sync.WaitGroup, ch <-chan interface{}, stop *bool, runner Runner, seq *int64) {
+	wg.Add(1)
 	for !*stop {
 		input, hasMore := <-ch
 		if hasMore {
-			wg.Add(1)
 			placed, orderid, err := runner(input, seq)
-			wg.Done()
 			if placed {
 				log.Printf("\n\x1b[32m order is placed:%v \x1b[0m\n", orderid)
 				continue
@@ -332,6 +350,7 @@ func servo(wg *sync.WaitGroup, ch <-chan interface{}, stop *bool, runner Runner,
 		}
 		time.Sleep(time.Duration(200+rand.Intn(1000)) * time.Millisecond)
 	}
+	wg.Done()
 }
 
 
