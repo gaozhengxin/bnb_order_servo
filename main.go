@@ -480,11 +480,11 @@ func CancelOld(wg *sync.WaitGroup, seq *int64) {
 	res, err := q.GetOpenOrders(query)
 	//fmt.Printf("\x1b[2m %v, %v \x1b[0m\n", res, err)
 	if err != nil {
-		log.Printf("\x1b[40m %v \x1b[0m\n", err)
+		//log.Printf("\x1b[40m %v \x1b[0m\n", err)
 		return
 	}
 	if res.Total == 0 {
-		log.Printf("\x1b[40m %v \x1b[0m\n", err)
+		//log.Printf("\x1b[40m %v \x1b[0m\n", err)
 		return
 	}
 	t := transaction.NewClient("Binance-Chain-Nile", km, q, c)
@@ -499,20 +499,21 @@ func CancelOld(wg *sync.WaitGroup, seq *int64) {
 		cts := strings.TrimSuffix(o.OrderCreateTime, "Z")
 		ct, err := time.Parse(layout, cts)
 		if err != nil {
-			log.Printf("\x1b[40m %v \x1b[0m\n", err)
+			//log.Printf("\x1b[40m %v \x1b[0m\n", err)
 			continue
 		}
 		if ct.Before(time.Now().Add(time.Duration(15)*time.Minute)) {
 
 			wg.Add(1)
-			res, err := t.CancelOrder(tmp[0], tmp[1], o.ID, true, opt)
+			//res, err := t.CancelOrder(tmp[0], tmp[1], o.ID, true, opt)
+			_, err := t.CancelOrder(tmp[0], tmp[1], o.ID, true, opt)
 			wg.Done()
-			fmt.Printf("\x1b[2m %v, %v \x1b[0m\n", res, err)
+			//fmt.Printf("\x1b[2m %v, %v \x1b[0m\n", res, err)
 			if err != nil {
-				log.Printf("\x1b[40m %v \x1b[0m\n", err)
+				//log.Printf("\x1b[40m %v \x1b[0m\n", err)
 				continue
 			}
-			log.Printf("\x1b[30m order %v is canceled \x1b[0m\n", o.ID)
+			//log.Printf("\x1b[30m order %v is canceled \x1b[0m\n", o.ID)
 		}
 	}
 	return
